@@ -12,7 +12,10 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const apiURL = "https://api.vatusa.net/v2/user"
+const (
+	apiURL      = "https://api.vatusa.net/v2/user"
+	staffAPIURL = "https://api.zlcartcc.org/v1/user/staff"
+)
 
 type User struct {
 	CID       int    `json:"cid"`
@@ -21,6 +24,13 @@ type User struct {
 	Rating    int    `json:"rating"`
 	Facility  string `json:"facility"`
 	Status    string `json:"status"`
+}
+
+type StaffMember struct {
+	CID       int    `json:"cid"`
+	FirstName string `json:"fname"`
+	LastName  string `json:"lname"`
+	Position  string `json:"position"`
 }
 
 func getUserData(cid string) (*User, error) {
@@ -68,6 +78,25 @@ func getUserData(cid string) (*User, error) {
 	return user, nil
 }
 
+func getFacilityStaff() ([]StaffMember, error) {
+	resp, err := http.Get(staffAPIURL)
+	if err != nil {
+		return nil, fmt.Errorf("error making request to staff API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error: non-200 status code received: %s", resp.Status)
+	}
+
+	var staff []StaffMember
+	if err := json.NewDecoder(resp.Body).Decode(&staff); err != nil {
+		return nil, fmt.Errorf("error parsing JSON response")
+	}
+
+	return staff, nil
+}
+
 func userHandler(w http.ResponseWriter, r *http.Request) {
 	cid := r.URL.Query().Get("cid")
 	if cid == "" {
@@ -85,13 +114,25 @@ func userHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(user)
 }
 
+func staffHandler(w http.ResponseWriter, r *http.Request) {
+	staff, err := getFacilityStaff()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(staff)
+}
+
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, "Welcome to the VATUSA User Lookup API! Use /user?cid={CID} to fetch user details.\n")
+	io.WriteString(w, "Welcome to the VATUSA User Lookup API! Use /user?cid={CID} to fetch user details. Use /staff to fetch facility staff details.\n")
 }
 
 func main() {
 	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/user", userHandler)
+	http.HandleFunc("/staff", staffHandler)
 
 	port := ":8080"
 	fmt.Println("Server running on port", port)
